@@ -4,9 +4,16 @@ export const gradeLabels = ['Most feasible', 'Favorable', 'Moderate', 'Challenge
 
 const clampScore = (value) => Math.min(5, Math.max(1, value));
 
+export const systemTypeFromWidth = (width) => {
+  if (width <= 120) return 'slab';
+  if (width <= 200) return 'girder';
+  return 'mega';
+};
+
 export const structuralSystem = (width) => {
-  if (width <= 120) return 'Concrete slab / post-tensioned deck concept';
-  if (width <= 200) return 'Precast or steel girder system with concrete deck';
+  const systemType = systemTypeFromWidth(width);
+  if (systemType === 'slab') return 'Concrete slab / post-tensioned deck concept';
+  if (systemType === 'girder') return 'Precast or steel girder system with concrete deck';
   return 'Mega-span / segmental box / truss concept (high complexity)';
 };
 
@@ -74,6 +81,8 @@ export const mapScoreToLabel = (score) => gradeLabels[score - 1] || 'Unknown';
 export const scoreToPercentage = (score) => ((score - 1) / 4) * 100;
 
 export const materialQuantities = (segment, config) => {
+  const systemType = systemTypeFromWidth(segment.width_ft);
+  const usesGirders = systemType !== 'slab';
   const area = segment.width_ft * segment.length_ft;
   const slabThickness = config.slab_thickness_ft;
   const girderSpacing = config.girder_spacing_ft;
@@ -81,19 +90,23 @@ export const materialQuantities = (segment, config) => {
   const assumedSpan = config.assumed_span_ft;
   const tonPerGirderFt = config.ton_per_girder_ft;
 
-  const slabConcreteVolume = area * slabThickness;
-  const rebarWeight = slabConcreteVolume * config.rebar_factor;
+  const slabConcreteVolume = systemType === 'slab' ? area * slabThickness : 0;
+  const deckConcreteVolume = usesGirders ? area * deckThickness : 0;
+  const structuralConcreteVolume = systemType === 'slab' ? slabConcreteVolume : deckConcreteVolume;
+  const rebarWeight = structuralConcreteVolume * config.rebar_factor;
   const waterproofingArea = area;
 
-  const numGirders = Math.ceil(segment.width_ft / girderSpacing);
-  const deckConcreteVolume = area * deckThickness;
-  const girderTonnage = numGirders * tonPerGirderFt * segment.length_ft;
+  const numGirders = usesGirders ? Math.ceil(segment.width_ft / girderSpacing) : 0;
+  const girderTonnage =
+    usesGirders ? numGirders * tonPerGirderFt * segment.length_ft * (systemType === 'mega' ? 1.25 : 1) : 0;
 
   const numBents = Math.ceil(segment.length_ft / assumedSpan);
   const supports = numBents * 2;
 
   return {
+    systemType,
     area,
+    structuralConcreteVolume,
     slabConcreteVolume,
     rebarWeight,
     waterproofingArea,
@@ -102,11 +115,17 @@ export const materialQuantities = (segment, config) => {
     girderTonnage,
     numBents,
     supports,
+    concreteDescriptor:
+      systemType === 'slab'
+        ? `${slabThickness} ft slab thickness assumption`
+        : `${deckThickness} ft deck thickness over girders`,
+    girderSpacing,
+    assumedSpan,
   };
 };
 
 export const costEstimates = (segment, quantities, config) => {
-  const concreteCost = quantities.slabConcreteVolume * config.unit_costs.concrete;
+  const concreteCost = quantities.structuralConcreteVolume * config.unit_costs.concrete;
   const rebarCost = quantities.rebarWeight * config.unit_costs.rebar;
   const waterproofingCost = quantities.waterproofingArea * config.unit_costs.waterproofing;
   const girderCost = quantities.girderTonnage * config.unit_costs.girder_steel;
@@ -121,11 +140,14 @@ export const costEstimates = (segment, quantities, config) => {
   const high = low * 1.2;
 
   const driverEntries = [
-    { label: 'Structural concrete and deck', value: concreteCost + rebarCost },
+    { label: 'Structural concrete and reinforcing', value: concreteCost + rebarCost },
     { label: 'Steel girders and frames', value: girderCost },
+    { label: 'Foundations and supports', value: foundationCost },
     { label: 'Traffic staging and utilities', value: utilities + staging },
     { label: 'Ventilation / fire-life safety (if tunnel)', value: tunnelSystems },
-  ].sort((a, b) => b.value - a.value);
+  ]
+    .filter((d) => d.value > 0)
+    .sort((a, b) => b.value - a.value);
 
   const drivers = driverEntries.slice(0, 3).map((d) => d.label);
 
@@ -133,15 +155,16 @@ export const costEstimates = (segment, quantities, config) => {
 };
 
 export const buildApproach = (segment) => {
+  const systemType = systemTypeFromWidth(segment.width_ft);
   const system = structuralSystem(segment.width_ft);
   const steps = [];
 
   steps.push('Maintain traffic in trench while building foundations from the edges.');
   steps.push('Construct transverse bents or walls at assumed span spacing to receive the deck.');
 
-  if (system.startsWith('Precast') || system.includes('girder')) {
+  if (systemType === 'girder') {
     steps.push('Set steel or precast girders at roughly 10 ft spacing, then place a cast-in-place deck.');
-  } else if (system.includes('slab')) {
+  } else if (systemType === 'slab') {
     steps.push('Form and pour a thick concrete slab or post-tensioned deck spanning the corridor.');
   } else {
     steps.push('Install long-span steel trusses or segmental concrete boxes to clear the full width.');

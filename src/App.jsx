@@ -37,6 +37,8 @@ const defaultConfig = {
   },
 };
 
+const formatNumber = (value) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+
 const Layout = ({ children }) => (
   <div className="app-shell">
     <nav>
@@ -57,6 +59,63 @@ const Layout = ({ children }) => (
     </div>
   </div>
 );
+
+const buildDrivers = (segment, quantities) => {
+  const widthDriver =
+    segment.width_ft > 200
+      ? 'Width exceeds 200 ft, pushing mega-span or truss concepts.'
+      : segment.width_ft > 120
+        ? 'Width between 120–200 ft leans toward girders with a concrete deck.'
+        : 'Width below 120 ft can use a slab or post-tensioned deck concept.';
+
+  const tunnelDriver =
+    segment.condition === 'partial_tunnel'
+      ? 'Partial tunnel condition triggers ventilation and fire-life safety systems.'
+      : 'Open trench limits the need for tunnel ventilation systems.';
+
+  const interchangeDriver = segment.interchange_within_segment
+    ? 'Interchange within the segment complicates staging and span placement.'
+    : 'No interchange in the segment simplifies deck sequencing.';
+
+  const rampDriver = segment.ramps_present
+    ? 'Existing ramps introduce phased construction and diaphragms.'
+    : 'No ramps reduces staged deck pours and diaphragms.';
+
+  const lengthDriver =
+    segment.length_ft > 1500
+      ? 'Length exceeds 1,500 ft, adding to deck quantities and schedule.'
+      : 'Moderate length keeps deck quantities and staging contained.';
+
+  const ownershipDriver =
+    segment.ownership === 'mixed'
+      ? 'Mixed ownership requires more agreements and coordination.'
+      : 'Single ownership simplifies decision making.';
+
+  const studiesDriver = segment.prior_studies
+    ? 'Prior studies provide a head start on process and risk definition.'
+    : 'No prior studies yet—early planning and NEPA will add time.';
+
+  const fundingDriver =
+    segment.funding_alignment === 'high'
+      ? 'Funding alignment is high, improving readiness.'
+      : segment.funding_alignment === 'low'
+        ? 'Funding alignment is low, dampening near-term feasibility.'
+        : 'Funding alignment is moderate and can be strengthened.';
+
+  const urbanDrivers = [
+    `Adjacent density: ${segment.adjacent_density}.`,
+    `Grid reconnection value: ${segment.grid_reconnection_value}.`,
+    `Surface cap area: ${formatNumber(quantities.area)} sq ft.`,
+  ];
+
+  return {
+    structural: [widthDriver, tunnelDriver, interchangeDriver, rampDriver],
+    cost: [widthDriver, tunnelDriver, lengthDriver, rampDriver],
+    schedule: [ownershipDriver, studiesDriver, interchangeDriver],
+    urban: urbanDrivers,
+    political: [ownershipDriver, fundingDriver, studiesDriver],
+  };
+};
 
 const Home = () => (
   <Layout>
@@ -200,29 +259,42 @@ const MaterialsTable = ({ quantities }) => (
     <tbody>
       <tr>
         <td>Cap area</td>
-        <td>{quantities.area.toLocaleString()} sq ft</td>
+        <td>{formatNumber(quantities.area)} sq ft</td>
       </tr>
       <tr>
         <td>Concrete volume (slab/deck)</td>
-        <td>{quantities.slabConcreteVolume.toLocaleString()} cubic ft</td>
+        <td>
+          {formatNumber(quantities.structuralConcreteVolume)} cubic ft
+          <div className="muted">{quantities.concreteDescriptor}</div>
+        </td>
       </tr>
       <tr>
         <td>Rebar weight (allowance)</td>
-        <td>{quantities.rebarWeight.toLocaleString()} lb</td>
+        <td>{formatNumber(quantities.rebarWeight)} lb</td>
       </tr>
       <tr>
         <td>Waterproofing area</td>
-        <td>{quantities.waterproofingArea.toLocaleString()} sq ft</td>
+        <td>{formatNumber(quantities.waterproofingArea)} sq ft</td>
       </tr>
       <tr>
         <td>Girders</td>
         <td>
-          ~{quantities.numGirders} lines @ ~{quantities.girderTonnage.toLocaleString()} ton allowance
+          {quantities.numGirders > 0 ? (
+            <>
+              ~{quantities.numGirders} lines @ ~{formatNumber(quantities.girderTonnage)} ton allowance
+              <div className="muted">Spacing ~{quantities.girderSpacing} ft</div>
+            </>
+          ) : (
+            <span className="muted">Not required for slab spans ≤ 120 ft</span>
+          )}
         </td>
       </tr>
       <tr>
         <td>Foundations</td>
-        <td>{quantities.numBents} bents (~{quantities.supports} supports)</td>
+        <td>
+          {quantities.numBents} bents (~{quantities.supports} supports)
+          <div className="muted">Assumed span ~{quantities.assumedSpan} ft</div>
+        </td>
       </tr>
     </tbody>
   </table>
@@ -254,7 +326,7 @@ const StructuralMemo = ({ segment, approach }) => (
   <div className="card">
     <div className="section-title">Structural engineering concept</div>
     <p>
-      Selected system: <span className="highlight">{approach.system}</span> for a {segment.width_ft} ft clear width and
+      Selected system: <span className="highlight">{approach.system}</span> for a {segment.width_ft} ft clear width and{' '}
       {segment.length_ft} ft length.
     </p>
     <ol>
@@ -267,10 +339,15 @@ const StructuralMemo = ({ segment, approach }) => (
       span spacing, then down to foundations adjacent to the trench. Waterproofing and drainage are included to protect
       the corridor below.
     </p>
+    {segment.condition === 'partial_tunnel' && (
+      <p className="muted" style={{ marginTop: -8 }}>
+        Ventilation, fire-life safety, and egress requirements apply because the corridor behaves like a partial tunnel.
+      </p>
+    )}
   </div>
 );
 
-const PillarCard = ({ title, score, explanation }) => (
+const PillarCard = ({ title, score, explanation, drivers = [] }) => (
   <div className="card" style={{ borderTop: `6px solid ${feasibilityColors[score - 1]}` }}>
     <div className="score-row">
       <div>
@@ -281,6 +358,13 @@ const PillarCard = ({ title, score, explanation }) => (
         {mapScoreToLabel(score)}
       </div>
     </div>
+    {drivers.length > 0 && (
+      <ul className="driver-list">
+        {drivers.map((driver) => (
+          <li key={driver}>{driver}</li>
+        ))}
+      </ul>
+    )}
   </div>
 );
 
@@ -307,6 +391,7 @@ const Results = () => {
   const approach = buildApproach(segment);
   const quantities = materialQuantities(segment, defaultConfig);
   const cost = costEstimates(segment, quantities, defaultConfig);
+  const drivers = buildDrivers(segment, quantities);
 
   const explanations = {
     structural:
@@ -319,6 +404,15 @@ const Results = () => {
     political: 'Process readiness considers ownership, prior studies, and funding alignment.',
   };
 
+  const baseSystemNarrative = `${approach.system} selected for a ${segment.width_ft} ft width over ${
+    segment.length_ft
+  } ft of corridor.`;
+
+  const overallNarrative =
+    segment.condition === 'partial_tunnel'
+      ? `${baseSystemNarrative} Partial tunnel conditions add ventilation and fire-life safety allowances; staging complexity scales with width and any interchange touches.`
+      : `${baseSystemNarrative} Open trench geometry with staged foundations enables the selected deck system; remaining risk centers on width-driven spans and traffic staging.`;
+
   return (
     <Layout>
       <div className="card" style={{ borderTop: `8px solid ${feasibilityColors[overall - 1]}` }}>
@@ -329,6 +423,7 @@ const Results = () => {
             <p style={{ margin: 0, color: '#334155' }}>
               Weighted view across structural (25%), cost (25%), schedule (20%), urban (20%), and political (10%).
             </p>
+            <p style={{ margin: '6px 0 0', color: '#0f172a', fontWeight: 600 }}>{overallNarrative}</p>
           </div>
           <div className="score-bar" style={{ width: 260 }}>
             <div className="score-indicator" style={{ left: `${scoreToPercentage(overall)}%` }} />
@@ -337,11 +432,36 @@ const Results = () => {
       </div>
 
       <div className="grid" style={{ marginTop: 14 }}>
-        <PillarCard title="Structural & Civil" score={scores.structural} explanation={explanations.structural} />
-        <PillarCard title="Cost feasibility" score={scores.cost} explanation={explanations.cost} />
-        <PillarCard title="Schedule" score={scores.schedule} explanation={explanations.schedule} />
-        <PillarCard title="Urban benefit" score={scores.urban} explanation={explanations.urban} />
-        <PillarCard title="Political / process" score={scores.political} explanation={explanations.political} />
+        <PillarCard
+          title="Structural & Civil"
+          score={scores.structural}
+          explanation={explanations.structural}
+          drivers={drivers.structural}
+        />
+        <PillarCard
+          title="Cost feasibility"
+          score={scores.cost}
+          explanation={explanations.cost}
+          drivers={drivers.cost}
+        />
+        <PillarCard
+          title="Schedule"
+          score={scores.schedule}
+          explanation={explanations.schedule}
+          drivers={drivers.schedule}
+        />
+        <PillarCard
+          title="Urban benefit"
+          score={scores.urban}
+          explanation={explanations.urban}
+          drivers={drivers.urban}
+        />
+        <PillarCard
+          title="Political / process"
+          score={scores.political}
+          explanation={explanations.political}
+          drivers={drivers.political}
+        />
       </div>
 
       <StructuralMemo segment={segment} approach={approach} />

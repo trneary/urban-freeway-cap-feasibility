@@ -16,6 +16,37 @@ const segments = [
     prior_studies: true,
     funding_alignment: 'medium',
     notes: 'High traffic volumes with constrained cross streets. Prior caps at Civic Center nearby.',
+    scoringInputs: {
+      structural: {
+        verticalProfile: 'belowGradeTrench',
+        trenchCompatibility: 'deckReady',
+        geotechnicalRisk: 'moderate',
+        structuralInterfaces: 'none',
+      },
+      cost: {
+        deckLengthFt: 1800,
+        clearWidthFt: 180,
+        rampsWithinSegment: 0,
+        majorInterchangePresent: true,
+      },
+      schedule: {
+        trafficOpsConstraint: 'moderate',
+        constructionStaging: 'multi_phase',
+        workWindows: 'restricted',
+        subsurfaceUncertainty: 'moderate_uncertainty',
+      },
+      urban: {
+        contextIntensity: 'moderate',
+        connectivityRestoration: 'partial',
+        publicRealmOpportunity: 'moderate',
+        destinationAdjacency: 'one',
+      },
+      political: {
+        ownershipControl: 'state',
+        priorStudies: true,
+        jurisdictionCount: 2,
+      },
+    },
   },
   {
     id: 'dal-woodall-rodgers',
@@ -34,6 +65,37 @@ const segments = [
     prior_studies: true,
     funding_alignment: 'high',
     notes: 'Continuation of Klyde Warren Park style cap with strong civic support.',
+    scoringInputs: {
+      structural: {
+        verticalProfile: 'belowGradeTrench',
+        trenchCompatibility: 'deckReady',
+        geotechnicalRisk: 'moderate',
+        structuralInterfaces: 'none',
+      },
+      cost: {
+        deckLengthFt: 1200,
+        clearWidthFt: 120,
+        rampsWithinSegment: 0,
+        majorInterchangePresent: false,
+      },
+      schedule: {
+        trafficOpsConstraint: 'moderate',
+        constructionStaging: 'multi_phase',
+        workWindows: 'restricted',
+        subsurfaceUncertainty: 'moderate_uncertainty',
+      },
+      urban: {
+        contextIntensity: 'moderate',
+        connectivityRestoration: 'partial',
+        publicRealmOpportunity: 'moderate',
+        destinationAdjacency: 'one',
+      },
+      political: {
+        ownershipControl: 'city',
+        priorStudies: true,
+        jurisdictionCount: 1,
+      },
+    },
   },
   {
     id: 'phl-676-vine',
@@ -52,6 +114,37 @@ const segments = [
     prior_studies: false,
     funding_alignment: 'medium',
     notes: 'Portions already covered; ventilation and fire-life safety would be significant.',
+    scoringInputs: {
+      structural: {
+        verticalProfile: 'partiallyBelowGrade',
+        trenchCompatibility: 'deckReady',
+        geotechnicalRisk: 'moderate',
+        structuralInterfaces: 'some',
+      },
+      cost: {
+        deckLengthFt: 2200,
+        clearWidthFt: 150,
+        rampsWithinSegment: 0,
+        majorInterchangePresent: false,
+      },
+      schedule: {
+        trafficOpsConstraint: 'moderate',
+        constructionStaging: 'multi_phase',
+        workWindows: 'restricted',
+        subsurfaceUncertainty: 'moderate_uncertainty',
+      },
+      urban: {
+        contextIntensity: 'moderate',
+        connectivityRestoration: 'partial',
+        publicRealmOpportunity: 'moderate',
+        destinationAdjacency: 'one',
+      },
+      political: {
+        ownershipControl: 'mixed',
+        priorStudies: false,
+        jurisdictionCount: 2,
+      },
+    },
   },
   {
     id: 'den-i25-speer',
@@ -70,6 +163,37 @@ const segments = [
     prior_studies: false,
     funding_alignment: 'low',
     notes: 'Wide corridor with multiple braided ramps and river adjacency.',
+    scoringInputs: {
+      structural: {
+        verticalProfile: 'belowGradeTrench',
+        trenchCompatibility: 'deckReady',
+        geotechnicalRisk: 'moderate',
+        structuralInterfaces: 'some',
+      },
+      cost: {
+        deckLengthFt: 2600,
+        clearWidthFt: 210,
+        rampsWithinSegment: 0,
+        majorInterchangePresent: true,
+      },
+      schedule: {
+        trafficOpsConstraint: 'moderate',
+        constructionStaging: 'multi_phase',
+        workWindows: 'restricted',
+        subsurfaceUncertainty: 'moderate_uncertainty',
+      },
+      urban: {
+        contextIntensity: 'moderate',
+        connectivityRestoration: 'partial',
+        publicRealmOpportunity: 'moderate',
+        destinationAdjacency: 'one',
+      },
+      political: {
+        ownershipControl: 'state',
+        priorStudies: false,
+        jurisdictionCount: 2,
+      },
+    },
   },
   {
     id: 'sea-i5-lid',
@@ -88,6 +212,37 @@ const segments = [
     prior_studies: true,
     funding_alignment: 'medium',
     notes: 'Urban canyon with steep topography and complex ramp interface.',
+    scoringInputs: {
+      structural: {
+        verticalProfile: 'partiallyBelowGrade',
+        trenchCompatibility: 'possibleWithMajorRebuild',
+        geotechnicalRisk: 'moderate',
+        structuralInterfaces: 'major',
+      },
+      cost: {
+        deckLengthFt: 3000,
+        clearWidthFt: 220,
+        rampsWithinSegment: 0,
+        majorInterchangePresent: true,
+      },
+      schedule: {
+        trafficOpsConstraint: 'moderate',
+        constructionStaging: 'multi_phase',
+        workWindows: 'restricted',
+        subsurfaceUncertainty: 'moderate_uncertainty',
+      },
+      urban: {
+        contextIntensity: 'moderate',
+        connectivityRestoration: 'partial',
+        publicRealmOpportunity: 'moderate',
+        destinationAdjacency: 'one',
+      },
+      political: {
+        ownershipControl: 'mixed',
+        priorStudies: true,
+        jurisdictionCount: 2,
+      },
+    },
   },
 ];
 

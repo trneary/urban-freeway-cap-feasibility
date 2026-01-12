@@ -1,4 +1,56 @@
+import nationalSegments from './data/nationalSegments';
+import SearchSegments from "./SearchSegments";
+// ...existing code...
+
+// National Segment Detail (uses same scoring workflow)
+const NationalSegmentDetail = () => {
+  const { id } = useParams();
+  const seg = nationalSegments.find(s => s.id === id);
+  if (!seg) {
+    return <Layout><p>Segment not found.</p></Layout>;
+  }
+  // Reuse scoringInputs and Results workflow
+  // Wrap in a segment-like object for Results
+  const segment = {
+    id: seg.id,
+    segment_name: seg.name,
+    city: seg.city,
+    state: seg.state,
+    highway: seg.freeway,
+    scoringInputs: seg.scoringInputs,
+    // fallback fields for Results UI
+    width_ft: seg.scoringInputs?.cost?.clearWidthFt,
+    length_ft: seg.scoringInputs?.cost?.deckLengthFt,
+    condition: seg.scoringInputs?.structural?.verticalProfile || 'trench',
+    notes: '',
+  };
+  // Results expects a segment object
+  return <Results segmentOverride={segment} />;
+};
 import { Routes, Route, Link, useNavigate, useParams } from 'react-router-dom';
+// MethodologyPage: route-based wrapper for ScoringMethodologyPanel
+const MethodologyPage = () => {
+  const navigate = useNavigate();
+  return (
+    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Scoring methodology">
+      <div className="modal-panel">
+        <div className="modal-header" style={{ justifyContent: 'flex-end' }}>
+          <button
+            className="button secondary"
+            style={{ padding: '8px 12px' }}
+            onClick={() => {
+              if (window.history.length > 1) navigate(-1);
+              else navigate('/');
+            }}
+          >
+            Back
+          </button>
+        </div>
+        <ScoringMethodologyPanel onClose={() => navigate('/')} />
+      </div>
+    </div>
+  );
+};
 import { Component, useState } from 'react';
 import segments from './data/segments';
 import {
@@ -12,6 +64,7 @@ import {
   materialQuantities,
   calculateFeasibilityScores,
   buildScoringInputs,
+  findMissingScoringFields,
 } from './utils';
 
 const defaultConfig = {
@@ -93,6 +146,11 @@ const scoringMethodology = [
 ];
 
 const formatNumber = (value) => value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+const formatNumberOrUnknown = (value, unit = '') => {
+  if (typeof value !== 'number' || Number.isNaN(value)) return 'Unknown';
+  return `${formatNumber(value)}${unit}`.trim();
+};
 
 const verticalProfileLabels = {
   belowGradeTrench: 'Below-grade trench',
@@ -206,7 +264,10 @@ const formatPlainText = (value) => {
     .join(' ');
 };
 
-const formatBoolean = (value) => (value ? 'Yes' : 'No');
+const formatBoolean = (value) => {
+  if (value === undefined) return 'Unknown';
+  return value ? 'Yes' : 'No';
+};
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -259,18 +320,15 @@ const Layout = ({ children }) => (
           Urban Freeway Cap Feasibility
         </Link>
       </div>
-      <div className="nav-links">
-        <Link className="button secondary" to="/segments">
-          Segment Library
-        </Link>
-      </div>
     </nav>
     {children}
   </div>
 );
 
-const buildDrivers = (segment, feasibility) => {
-  const rampCount = segment.ramp_count !== undefined ? segment.ramp_count : 0;
+const buildDrivers = (scoringInputs, feasibility) => {
+  const rampCount = scoringInputs?.cost?.rampsWithinSegment ?? 0;
+  const clearWidthFt = scoringInputs?.cost?.clearWidthFt;
+  const deckLengthFt = scoringInputs?.cost?.deckLengthFt;
   const drivers = {
     structural: [],
     cost: [],
@@ -288,9 +346,9 @@ const buildDrivers = (segment, feasibility) => {
   feasibility.cost.penalties.forEach(penalty => {
     if (penalty.key === 'width') {
       let widthDriver;
-      if (segment.width_ft > 300) {
+      if (clearWidthFt > 300) {
         widthDriver = 'Width exceeds 300 ft, significantly increasing structural quantities.';
-      } else if (segment.width_ft > 240) {
+      } else if (clearWidthFt > 240) {
         widthDriver = 'Width between 240–300 ft, increasing structural quantities.';
       } else {
         widthDriver = 'Width between 200–240 ft, moderately increasing costs.';
@@ -298,9 +356,9 @@ const buildDrivers = (segment, feasibility) => {
       drivers.cost.push(widthDriver);
     } else if (penalty.key === 'length') {
       let lengthDriver;
-      if (segment.length_ft > 4000) {
+      if (deckLengthFt > 4000) {
         lengthDriver = 'Length exceeds 4,000 ft, significantly increasing deck quantities and staging.';
-      } else if (segment.length_ft > 3000) {
+      } else if (deckLengthFt > 3000) {
         lengthDriver = 'Length between 3,000–4,000 ft, increasing deck quantities.';
       } else {
         lengthDriver = 'Length between 2,000–3,000 ft, moderately increasing costs.';
@@ -317,7 +375,7 @@ const buildDrivers = (segment, feasibility) => {
 
   // Schedule drivers
   feasibility.schedule.penalties.forEach(penalty => {
-    drivers.schedule.push(penalty.key); // key is now the full label with explanation
+    drivers.schedule.push(penalty.key);
   });
 
   // Urban drivers
@@ -333,46 +391,51 @@ const buildDrivers = (segment, feasibility) => {
   return drivers;
 };
 
-const Home = () => (
-  <Layout>
-    <div className="hero card">
-      <div>
-        <div className="tag">Conceptual Engineering Screener</div>
-        <h1>Can we cap this below-grade freeway?</h1>
-        <p>
-          A transparent, assumption-driven explorer that screens structural, cost, schedule, urban, and process
-          feasibility for U.S. freeway cap concepts.
-        </p>
-        <div style={{ display: 'flex', gap: 12 }}>
-          <Link className="button" to="/segments">
-            Browse segments
-          </Link>
-          <a className="button secondary" href="#principles">
-            Methodology
-          </a>
+const Home = () => {
+  const navigate = useNavigate();
+  return (
+    <Layout>
+      <div className="hero card">
+        <div>
+          <div className="tag">Conceptual Engineering Screener</div>
+          <h1>Can we cap this below-grade freeway?</h1>
+          <p>
+            An assumption-driven explorer that screens structural, cost, schedule, urban, and process
+            feasibility for U.S. freeway cap concepts.
+          </p>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <Link className="button" to="/segments">
+              Browse segments
+            </Link>
+            <button
+              className="button secondary"
+              onClick={() => navigate('/search')}
+              type="button"
+            >
+              Search segments
+            </button>
+            <button
+              className="button secondary"
+              onClick={() => navigate('/methodology')}
+              type="button"
+            >
+              Methodology
+            </button>
+          </div>
         </div>
-        <div id="principles" className="callouts">
-          <div className="callout">Structural realism without detailed calcs</div>
-          <div className="callout">Relative feasibility, not bid pricing</div>
-          <div className="callout">Built on explainable rules and allowances</div>
+        <div className="card" style={{ border: '1px dashed #cbd5e1', background: '#f8fafc' }}>
+          <h3 style={{ marginTop: 0 }}>What you get</h3>
+          <ul>
+            <li>A clear overall feasibility rating with category-level scores</li>
+            <li>The key structural, cost, schedule, urban, and political factors driving the result</li>
+            <li>The specific input assumptions used for scoring, shown by category</li>
+            <li>Capital cost range for given segment</li>
+          </ul>
         </div>
       </div>
-      <div className="card" style={{ border: '1px dashed #cbd5e1', background: '#f8fafc' }}>
-        <h3 style={{ marginTop: 0 }}>What you get</h3>
-        <ul>
-          <li>Overall feasibility color band with narrative</li>
-          <li>Order-of-magnitude quantities and cost range</li>
-          <li>Urban, political, and schedule drivers</li>
-        </ul>
-      </div>
-    </div>
-    <div className="disclaimer">
-      <div style={{ fontWeight: 600 }}>Comparative feasibility only.</div>
-      <div style={{ fontSize: '14px', marginTop: '4px' }}>Not engineering design, cost estimating, or schedule prediction.</div>
-    </div>
-  </Layout>
-);
-
+    </Layout>
+  );
+};
 const SegmentLibrary = () => {
   return (
     <Layout>
@@ -409,6 +472,7 @@ const SegmentDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const segment = segments.find((s) => s.id === id);
+  const scoringInputs = segment ? buildScoringInputs(segment) : null;
 
   if (!segment) {
     return (
@@ -425,7 +489,7 @@ const SegmentDetail = () => {
           <div className="badge">{segment.highway}</div>
           <h2 style={{ margin: '6px 0 4px' }}>{segment.segment_name}</h2>
           <p style={{ margin: 0, color: '#334155' }}>
-            {segment.city}, {segment.state} · Clear width {segment.width_ft} ft · Deck length {segment.length_ft} ft ·{' '}
+            {segment.city}, {segment.state} · Clear width {scoringInputs?.cost?.clearWidthFt ?? segment.width_ft} ft · Deck length {scoringInputs?.cost?.deckLengthFt ?? segment.length_ft} ft ·{' '}
             {segment.condition.replace('_', ' ')}
           </p>
         </div>
@@ -437,12 +501,12 @@ const SegmentDetail = () => {
         <div className="card">
           <div className="section-title">Context</div>
           <ul>
-            <li>Ramps present: {segment.ramps_present ? 'Yes' : 'No'}</li>
-            <li>Interchange within segment: {segment.interchange_within_segment ? 'Yes' : 'No'}</li>
+            <li>Ramps within segment: {formatBoolean(scoringInputs?.cost?.rampsWithinSegment)}</li>
+            <li>Interchange within segment: {formatBoolean(scoringInputs?.cost?.majorInterchangePresent)}</li>
             <li>Adjacent density: {segment.adjacent_density}</li>
             <li>Grid reconnection value: {segment.grid_reconnection_value}</li>
-            <li>Ownership / control: {formatOwnershipLabel(segment.ownership)}</li>
-            <li>Prior studies: {segment.priorStudies ? 'Yes' : 'No'}</li>
+            <li>Ownership / control: {formatOwnershipLabel(scoringInputs?.political?.ownershipControl)}</li>
+            <li>Prior studies: {formatBoolean(scoringInputs?.political?.priorStudies)}</li>
             <li>Funding alignment: {segment.funding_alignment}</li>
           </ul>
         </div>
@@ -555,73 +619,76 @@ const PillarCard = ({ title, points, max, explanation, drivers = [], isExpanded,
 };
 
 const buildSegmentInputRows = (segment) => {
-  const rampCount = typeof segment.ramp_count === 'number' ? formatNumber(segment.ramp_count) : null;
+  const rampCount = typeof segment?.cost?.rampsWithinSegment === 'number' ? formatNumber(segment.cost.rampsWithinSegment) : null;
   return [
-    { label: 'Deck length', value: typeof segment.length_ft === 'number' ? `${formatNumber(segment.length_ft)} ft` : 'Not provided' },
-    { label: 'Clear width', value: typeof segment.width_ft === 'number' ? `${formatNumber(segment.width_ft)} ft` : 'Not provided' },
-    { label: 'Ramps within segment', value: rampCount ?? formatBoolean(!!segment.ramps_present) },
-    { label: 'Major interchange', value: formatBoolean(!!segment.interchange_within_segment) },
+    { label: 'Deck length', value: formatNumberOrUnknown(segment?.cost?.deckLengthFt, ' ft') },
+    { label: 'Clear width', value: formatNumberOrUnknown(segment?.cost?.clearWidthFt, ' ft') },
+    { label: 'Ramps within segment', value: rampCount ?? formatBoolean(segment?.cost?.rampsWithinSegment) },
+    { label: 'Major interchange', value: formatBoolean(segment?.cost?.majorInterchangePresent) },
     {
       label: 'Vertical profile',
-      value: verticalProfileInputLabels[segment.verticalProfile] || formatPlainText(segment.condition),
+      value: verticalProfileInputLabels[segment?.structural?.verticalProfile] || 'Unknown',
     },
-    { label: 'Ownership / control', value: formatOwnershipLabel(segment.ownership) },
-    { label: 'Prior studies', value: formatBoolean(!!segment.priorStudies) },
+    { label: 'Ownership / control', value: formatOwnershipLabel(segment?.political?.ownershipControl) },
+    { label: 'Prior studies', value: formatBoolean(segment?.political?.priorStudies) },
     {
       label: 'Jurisdiction count',
-      value: formatJurisdictionValue(segment.jurisdictionCount),
+      value: formatJurisdictionValue(segment?.political?.jurisdictionCount),
     },
   ];
 };
 
 const buildScoringInputGroups = (inputs) => {
-  const lengthValue = typeof inputs.length_ft === 'number' ? `${formatNumber(inputs.length_ft)} ft` : 'Not provided';
-  const widthValue = typeof inputs.width_ft === 'number' ? `${formatNumber(inputs.width_ft)} ft` : 'Not provided';
-  const rampCountValue = typeof inputs.ramp_count === 'number' ? formatNumber(inputs.ramp_count) : 'Not provided';
+  const lengthValue = formatNumberOrUnknown(inputs?.cost?.deckLengthFt, ' ft');
+  const widthValue = formatNumberOrUnknown(inputs?.cost?.clearWidthFt, ' ft');
+  const rampCountValue =
+    typeof inputs?.cost?.rampsWithinSegment === 'number'
+      ? formatNumber(inputs.cost.rampsWithinSegment)
+      : 'Unknown';
 
   return [
     {
       title: 'Structural & Civil — Inputs',
       rows: [
-        { label: 'Vertical profile', value: lookupLabel(verticalProfileInputLabels, inputs.verticalProfile) },
-        { label: 'Trench compatibility', value: lookupLabel(trenchCompatibilityLabels, inputs.trenchCompatibility) },
-        { label: 'Geotechnical risk', value: lookupLabel(geotechRiskLabels, inputs.geotechRisk) },
-        { label: 'Structural interfaces within segment', value: lookupLabel(structureInterfacesLabels, inputs.structureInterfaces) },
+        { label: 'Vertical profile', value: lookupLabel(verticalProfileInputLabels, inputs?.structural?.verticalProfile) },
+        { label: 'Trench compatibility', value: lookupLabel(trenchCompatibilityLabels, inputs?.structural?.trenchCompatibility) },
+        { label: 'Geotechnical risk', value: lookupLabel(geotechRiskLabels, inputs?.structural?.geotechnicalRisk) },
+        { label: 'Structural interfaces within segment', value: lookupLabel(structureInterfacesLabels, inputs?.structural?.structuralInterfaces) },
       ],
     },
     {
       title: 'Cost Feasibility — Inputs',
       rows: [
-        { label: 'Deck length', value: lengthValue !== 'Not provided' ? `${lengthValue}` : 'Not provided' },
-        { label: 'Clear width', value: widthValue !== 'Not provided' ? `${widthValue}` : 'Not provided' },
+        { label: 'Deck length', value: lengthValue },
+        { label: 'Clear width', value: widthValue },
         { label: 'Ramps within segment', value: rampCountValue },
-        { label: 'Major freeway-to-freeway interchange present', value: formatBoolean(inputs.interchange_within_segment) },
+        { label: 'Major freeway-to-freeway interchange present', value: formatBoolean(inputs?.cost?.majorInterchangePresent) },
       ],
     },
     {
       title: 'Schedule Feasibility — Inputs',
       rows: [
-        { label: 'Traffic operations constraint', value: lookupLabel(trafficOpsLabels, inputs.scheduleTrafficOps) },
-        { label: 'Construction staging', value: lookupLabel(stagingLabels, inputs.scheduleStaging) },
-        { label: 'Work windows', value: lookupLabel(workWindowLabels, inputs.scheduleWorkWindows) },
-        { label: 'Subsurface uncertainty', value: lookupLabel(subsurfaceLabels, inputs.scheduleSubsurface) },
+        { label: 'Traffic operations constraint', value: lookupLabel(trafficOpsLabels, inputs?.schedule?.trafficOpsConstraint) },
+        { label: 'Construction staging', value: lookupLabel(stagingLabels, inputs?.schedule?.constructionStaging) },
+        { label: 'Work windows', value: lookupLabel(workWindowLabels, inputs?.schedule?.workWindows) },
+        { label: 'Subsurface uncertainty', value: lookupLabel(subsurfaceLabels, inputs?.schedule?.subsurfaceUncertainty) },
       ],
     },
     {
       title: 'Urban Benefit — Inputs',
       rows: [
-        { label: 'Urban context intensity', value: lookupLabel(urbanContextLabels, inputs.urbanContext) },
-        { label: 'Connectivity restoration', value: lookupLabel(urbanConnectivityLabels, inputs.urbanConnectivity) },
-        { label: 'Public realm opportunity', value: lookupLabel(urbanPublicSpaceLabels, inputs.urbanPublicSpace) },
-        { label: 'Destination adjacency', value: lookupLabel(urbanDestinationsLabels, inputs.urbanDestinations) },
+        { label: 'Urban context intensity', value: lookupLabel(urbanContextLabels, inputs?.urban?.contextIntensity) },
+        { label: 'Connectivity restoration', value: lookupLabel(urbanConnectivityLabels, inputs?.urban?.connectivityRestoration) },
+        { label: 'Public realm opportunity', value: lookupLabel(urbanPublicSpaceLabels, inputs?.urban?.publicRealmOpportunity) },
+        { label: 'Destination adjacency', value: lookupLabel(urbanDestinationsLabels, inputs?.urban?.destinationAdjacency) },
       ],
     },
     {
       title: 'Political / Process — Inputs',
       rows: [
-        { label: 'Ownership / control', value: formatOwnershipLabel(inputs.ownership) },
-        { label: 'Prior studies', value: formatBoolean(inputs.priorStudies) },
-        { label: 'Jurisdiction count', value: formatJurisdictionValue(inputs.jurisdictionCount) },
+        { label: 'Ownership / control', value: formatOwnershipLabel(inputs?.political?.ownershipControl) },
+        { label: 'Prior studies', value: formatBoolean(inputs?.political?.priorStudies) },
+        { label: 'Jurisdiction count', value: formatJurisdictionValue(inputs?.political?.jurisdictionCount) },
       ],
     },
   ];
@@ -677,9 +744,9 @@ const InputsUsedForScoring = ({ inputs, panelId = 'inputs-used-panel', style }) 
   );
 };
 
-const ScoringDetailsPanel = ({ segment, panelId = 'scoring-details-panel', embedded = false, style }) => {
+const ScoringDetailsPanel = ({ scoringInputs, panelId = 'scoring-details-panel', embedded = false, style }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const segmentInputs = buildSegmentInputRows(segment);
+  const segmentInputs = buildSegmentInputRows(scoringInputs);
   return (
     <div className={`card scoring-details-card${embedded ? ' scoring-details-card--embedded' : ''}`} style={style}>
       <div className="score-row">
@@ -752,10 +819,10 @@ const ScoringMethodologyPanel = ({ onClose }) => (
   </div>
 );
 
-const Results = () => {
+const Results = ({ segmentOverride }) => {
   const { id } = useParams();
-  const segment = segments.find((s) => s.id === id);
-
+  // Use override if provided (for national segments), else find in local library
+  const segment = segmentOverride || segments.find((s) => s.id === id);
   if (!segment) {
     return (
       <Layout>
@@ -764,8 +831,13 @@ const Results = () => {
     );
   }
 
-  const feasibility = calculateFeasibilityScores(segment);
   const scoringInputs = buildScoringInputs(segment);
+  const missingScoringInputs = findMissingScoringFields(scoringInputs);
+  const feasibility = calculateFeasibilityScores(scoringInputs);
+
+  if (missingScoringInputs.length > 0) {
+    console.warn('Missing scoring inputs detected:', missingScoringInputs);
+  }
   
   // Runtime assertion: ensure all categories exist with required shape
   const requiredCategories = ['structural', 'cost', 'schedule', 'urban', 'politicalProcess'];
@@ -783,9 +855,15 @@ const Results = () => {
     politicalProcess: feasibility.politicalProcess.score,
     total: feasibility.total,
   };
-  const quantities = materialQuantities(segment, defaultConfig);
-  const cost = costEstimates(segment, quantities, defaultConfig);
-  const drivers = buildDrivers(segment, feasibility);
+  const geometry = {
+    width_ft: scoringInputs?.cost?.clearWidthFt ?? segment.width_ft,
+    length_ft: scoringInputs?.cost?.deckLengthFt ?? segment.length_ft,
+    condition: segment.condition,
+  };
+
+  const quantities = materialQuantities(geometry, defaultConfig);
+  const cost = costEstimates({ ...geometry, condition: segment.condition }, quantities, defaultConfig);
+  const drivers = buildDrivers(scoringInputs, feasibility);
   const [expanded, setExpanded] = useState(new Set());
   const [isMethodologyOpen, setIsMethodologyOpen] = useState(false);
 
@@ -807,7 +885,7 @@ const Results = () => {
     political: 'How straightforward the approvals and agency coordination would be.',
   };
 
-  const geometryNarrative = `Segment geometry: clear width ${segment.width_ft} ft over deck length ${segment.length_ft} ft of corridor.`;
+  const geometryNarrative = `Segment geometry: clear width ${formatNumberOrUnknown(geometry.width_ft, ' ft')} over deck length ${formatNumberOrUnknown(geometry.length_ft, ' ft')} of corridor.`;
 
   const overallNarrative =
     segment.condition === 'partial_tunnel'
@@ -854,7 +932,7 @@ const Results = () => {
       </div>
 
       <ScoringDetailsPanel
-        segment={segment}
+        scoringInputs={scoringInputs}
         panelId={`results-${segment.id}-scoring`}
         style={{ marginTop: 12 }}
       />
@@ -930,8 +1008,10 @@ const App = () => (
     <Routes>
       <Route path="/" element={<Home />} />
       <Route path="/segments" element={<SegmentLibrary />} />
+      <Route path="/search" element={<SearchSegments />} />
       <Route path="/segments/:id" element={<SegmentDetail />} />
       <Route path="/segments/:id/results" element={<Results />} />
+      <Route path="/methodology" element={<MethodologyPage />} />
     </Routes>
   </ErrorBoundary>
 );

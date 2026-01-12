@@ -1,0 +1,21 @@
+{
+  "name": "urban-freeway-cap-backend",
+  "version": "0.1.0",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "server:dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "seed:cities": "node src/seedCities.js"
+  },
+  "dependencies": {
+    "axios": "^1.13.2",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "pg": "^8.16.3",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

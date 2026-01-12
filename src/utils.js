@@ -196,6 +196,32 @@ const normalizeCategoryResult = (result, maxPoints) => {
   return { score, max: maxPoints, penalties, summary };
 };
 
+const safeNumber = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : undefined);
+const safeInteger = (value) => (Number.isInteger(value) ? value : undefined);
+const isMissing = (value) => value === undefined || value === null;
+
+export const findMissingScoringFields = (inputs = {}) => {
+  const required = {
+    structural: ['verticalProfile', 'trenchCompatibility', 'geotechnicalRisk', 'structuralInterfaces'],
+    cost: ['deckLengthFt', 'clearWidthFt', 'rampsWithinSegment', 'majorInterchangePresent'],
+    schedule: ['trafficOpsConstraint', 'constructionStaging', 'workWindows', 'subsurfaceUncertainty'],
+    urban: ['contextIntensity', 'connectivityRestoration', 'publicRealmOpportunity', 'destinationAdjacency'],
+    political: ['ownershipControl', 'priorStudies', 'jurisdictionCount'],
+  };
+
+  const missing = [];
+  Object.entries(required).forEach(([category, fields]) => {
+    fields.forEach((field) => {
+      const value = inputs?.[category]?.[field];
+      if (isMissing(value)) {
+        missing.push(`${category}.${field}`);
+      }
+    });
+  });
+
+  return missing;
+};
+
 export const computePoliticalProcess = (inputs) => {
   const { ownership = 'mixed', priorStudies = false, jurisdictionCount = 2 } = inputs;
   let score = 10;
@@ -232,71 +258,92 @@ export const computePoliticalProcess = (inputs) => {
 };
 
 export const buildScoringInputs = (segment) => {
+  const raw = segment?.scoringInputs || {};
+  const structural = raw.structural || {};
+  const cost = raw.cost || {};
+  const schedule = raw.schedule || {};
+  const urban = raw.urban || {};
+  const political = raw.political || {};
+
   return {
-    ...segment,
-    ownership: segment.ownership || 'mixed',
-    priorStudies: segment.priorStudies !== undefined ? segment.priorStudies : false,
-    jurisdictionCount: typeof segment.jurisdictionCount === 'number' ? segment.jurisdictionCount : 2,
-    width_ft: typeof segment.width_ft === 'number' ? segment.width_ft : 0,
-    length_ft: typeof segment.length_ft === 'number' ? segment.length_ft : 0,
-    condition: segment.condition || 'trench',
-    ramps_present: !!segment.ramps_present,
-    interchange_within_segment: !!segment.interchange_within_segment,
-    adjacent_density: segment.adjacent_density || 'low',
-    grid_reconnection_value: segment.grid_reconnection_value || 'low',
-    ramp_count: typeof segment.ramp_count === 'number' ? segment.ramp_count : 0,
-    scheduleTrafficOps: segment.scheduleTrafficOps || 'moderate',
-    scheduleStaging: segment.scheduleStaging || 'multi_phase',
-    scheduleWorkWindows: segment.scheduleWorkWindows || 'restricted',
-    scheduleSubsurface: segment.scheduleSubsurface || 'moderate_uncertainty',
-    urbanContext: segment.urbanContext || 'moderate',
-    urbanConnectivity: segment.urbanConnectivity || 'partial',
-    urbanPublicSpace: segment.urbanPublicSpace || 'moderate',
-    urbanDestinations: segment.urbanDestinations || 'one',
-    verticalProfile: segment.verticalProfile || 'belowGradeTrench',
-    trenchCompatibility: segment.trenchCompatibility || 'deckReady',
-    geotechRisk: segment.geotechRisk || 'moderate',
-    structureInterfaces: segment.structureInterfaces || 'none',
+    structural: {
+      verticalProfile:
+        structural.verticalProfile ?? segment.verticalProfile ?? (segment.condition === 'trench' ? 'belowGradeTrench' : undefined),
+      trenchCompatibility: structural.trenchCompatibility ?? segment.trenchCompatibility,
+      geotechnicalRisk: structural.geotechnicalRisk ?? segment.geotechRisk,
+      structuralInterfaces: structural.structuralInterfaces ?? segment.structureInterfaces,
+    },
+    cost: {
+      deckLengthFt: safeNumber(cost.deckLengthFt ?? segment.length_ft),
+      clearWidthFt: safeNumber(cost.clearWidthFt ?? segment.width_ft),
+      rampsWithinSegment: safeInteger(cost.rampsWithinSegment ?? segment.ramp_count),
+      majorInterchangePresent: cost.majorInterchangePresent ?? segment.interchange_within_segment,
+    },
+    schedule: {
+      trafficOpsConstraint: schedule.trafficOpsConstraint ?? segment.scheduleTrafficOps,
+      constructionStaging: schedule.constructionStaging ?? segment.scheduleStaging,
+      workWindows: schedule.workWindows ?? segment.scheduleWorkWindows,
+      subsurfaceUncertainty: schedule.subsurfaceUncertainty ?? segment.scheduleSubsurface,
+    },
+    urban: {
+      contextIntensity: urban.contextIntensity ?? segment.urbanContext,
+      connectivityRestoration: urban.connectivityRestoration ?? segment.urbanConnectivity,
+      publicRealmOpportunity: urban.publicRealmOpportunity ?? segment.urbanPublicSpace,
+      destinationAdjacency: urban.destinationAdjacency ?? segment.urbanDestinations,
+    },
+    political: {
+      ownershipControl: political.ownershipControl ?? segment.ownership,
+      priorStudies: political.priorStudies ?? segment.prior_studies ?? segment.priorStudies,
+      jurisdictionCount: safeInteger(political.jurisdictionCount ?? segment.jurisdictionCount),
+    },
   };
 };
 
-export const calculateFeasibilityScores = (segment) => {
-  const safeSegment = buildScoringInputs(segment);
+export const calculateFeasibilityScores = (scoringInputs) => {
+  const structuralInputs = scoringInputs?.structural || {};
+  const costInputs = scoringInputs?.cost || {};
+  const scheduleInputs = scoringInputs?.schedule || {};
+  const urbanInputs = scoringInputs?.urban || {};
+  const politicalInputs = scoringInputs?.political || {};
 
   let structural = 25;
   const structuralPenalties = [];
 
-  if (safeSegment.verticalProfile === 'partiallyBelowGrade') {
+  const verticalProfile = structuralInputs.verticalProfile;
+  if (verticalProfile === 'partiallyBelowGrade') {
     structuralPenalties.push({ key: 'verticalProfile', label: 'Vertical profile', points: -5, description: 'Partially below grade profile requires additional structural considerations' });
     structural -= 5;
-  } else if (safeSegment.verticalProfile === 'atGrade') {
+  } else if (verticalProfile === 'atGrade') {
     structuralPenalties.push({ key: 'verticalProfile', label: 'Vertical profile', points: -8, description: 'At grade profile complicates deck installation and support' });
     structural -= 8;
-  } else if (safeSegment.verticalProfile === 'elevatedOrViaduct') {
+  } else if (verticalProfile === 'elevatedOrViaduct') {
     structuralPenalties.push({ key: 'verticalProfile', label: 'Vertical profile', points: -10, description: 'Elevated or viaduct profile poses significant structural challenges' });
     structural -= 10;
   }
 
-  if (safeSegment.trenchCompatibility === 'possibleWithMajorRebuild') {
+  const trenchCompatibility = structuralInputs.trenchCompatibility;
+  if (trenchCompatibility === 'possibleWithMajorRebuild') {
     structuralPenalties.push({ key: 'trenchCompatibility', label: 'Trench compatibility', points: -4, description: 'Retaining walls or right-of-way may require major rebuild for deck support' });
     structural -= 4;
-  } else if (safeSegment.trenchCompatibility === 'notCompatibleOrUnknown') {
+  } else if (trenchCompatibility === 'notCompatibleOrUnknown' || trenchCompatibility === undefined || trenchCompatibility === 'unknown') {
     structuralPenalties.push({ key: 'trenchCompatibility', label: 'Trench compatibility', points: -7, description: 'Retaining walls, right-of-way fit, or deck support uncertainty' });
     structural -= 7;
   }
 
-  if (safeSegment.geotechRisk === 'moderate') {
+  const geotechRisk = structuralInputs.geotechnicalRisk;
+  if (geotechRisk === 'moderate') {
     structuralPenalties.push({ key: 'geotechRisk', label: 'Geotechnical risk', points: -2, description: 'Moderate geotechnical risk with potential settlement sensitivity' });
     structural -= 2;
-  } else if (safeSegment.geotechRisk === 'highOrUnknown') {
+  } else if (geotechRisk === 'highOrUnknown' || geotechRisk === undefined || geotechRisk === 'unknown') {
     structuralPenalties.push({ key: 'geotechRisk', label: 'Geotechnical risk', points: -5, description: 'Unknown soils, high groundwater, or settlement sensitivity' });
     structural -= 5;
   }
 
-  if (safeSegment.structureInterfaces === 'some') {
+  const structuralInterfaces = structuralInputs.structuralInterfaces;
+  if (structuralInterfaces === 'some') {
     structuralPenalties.push({ key: 'structureInterfaces', label: 'Structural interfaces', points: -1, description: 'Some complex interfaces with ramps/bridges that complicate span placement' });
     structural -= 1;
-  } else if (safeSegment.structureInterfaces === 'major') {
+  } else if (structuralInterfaces === 'major') {
     structuralPenalties.push({ key: 'structureInterfaces', label: 'Structural interfaces', points: -3, description: 'Major complex interfaces with ramps/bridges/irregular geometry complicating staged foundations' });
     structural -= 3;
   }
@@ -306,26 +353,28 @@ export const calculateFeasibilityScores = (segment) => {
   let cost = 25;
   const costPenalties = {};
 
+  const clearWidthFt = safeNumber(costInputs.clearWidthFt);
   let widthPenalty = 0;
-  if (safeSegment.width_ft > 300) widthPenalty = 6;
-  else if (safeSegment.width_ft > 240) widthPenalty = 4;
-  else if (safeSegment.width_ft > 200) widthPenalty = 2;
+  if (clearWidthFt > 300) widthPenalty = 6;
+  else if (clearWidthFt > 240) widthPenalty = 4;
+  else if (clearWidthFt > 200) widthPenalty = 2;
   if (widthPenalty > 0) costPenalties.width = widthPenalty;
   cost -= widthPenalty;
 
+  const deckLengthFt = safeNumber(costInputs.deckLengthFt);
   let lengthPenalty = 0;
-  if (safeSegment.length_ft > 4000) lengthPenalty = 6;
-  else if (safeSegment.length_ft > 3000) lengthPenalty = 4;
-  else if (safeSegment.length_ft > 2000) lengthPenalty = 2;
+  if (deckLengthFt > 4000) lengthPenalty = 6;
+  else if (deckLengthFt > 3000) lengthPenalty = 4;
+  else if (deckLengthFt > 2000) lengthPenalty = 2;
   if (lengthPenalty > 0) costPenalties.length = lengthPenalty;
   cost -= lengthPenalty;
 
-  const rampCount = safeSegment.ramp_count !== undefined ? safeSegment.ramp_count : 0;
+  const rampCount = safeInteger(costInputs.rampsWithinSegment) ?? 0;
   const rampPenalty = Math.min(rampCount * 2, 8);
   if (rampPenalty > 0) costPenalties.ramps = rampPenalty;
   cost -= rampPenalty;
 
-  const interchangePenalty = safeSegment.interchange_within_segment ? 8 : 0;
+  const interchangePenalty = costInputs.majorInterchangePresent ? 8 : 0;
   if (interchangePenalty > 0) costPenalties.interchange = interchangePenalty;
   cost -= interchangePenalty;
 
@@ -334,35 +383,39 @@ export const calculateFeasibilityScores = (segment) => {
   let schedule = 20;
   const schedulePenalties = [];
 
-  if (safeSegment.scheduleTrafficOps === 'moderate') {
+  const trafficOps = scheduleInputs.trafficOpsConstraint;
+  if (trafficOps === 'moderate') {
     schedulePenalties.push({ key: 'trafficOps', label: 'Traffic operations', points: -4, description: 'Moderate impact with limited detours and peak restrictions' });
     schedule -= 4;
-  } else if (safeSegment.scheduleTrafficOps === 'severe') {
+  } else if (trafficOps === 'severe') {
     schedulePenalties.push({ key: 'trafficOps', label: 'Traffic operations', points: -8, description: 'Severe impact requiring lanes to remain open most times' });
     schedule -= 8;
   }
 
-  if (safeSegment.scheduleStaging === 'multi_phase') {
+  const staging = scheduleInputs.constructionStaging;
+  if (staging === 'multi_phase') {
     schedulePenalties.push({ key: 'staging', label: 'Construction staging', points: -3, description: 'Multi-phase dependencies' });
     schedule -= 3;
-  } else if (safeSegment.scheduleStaging === 'brittle') {
+  } else if (staging === 'brittle') {
     schedulePenalties.push({ key: 'staging', label: 'Construction staging', points: -6, description: 'Highly interdependent phases' });
     schedule -= 6;
   }
 
-  if (safeSegment.scheduleWorkWindows === 'restricted') {
+  const workWindows = scheduleInputs.workWindows;
+  if (workWindows === 'restricted') {
     schedulePenalties.push({ key: 'workWindows', label: 'Work windows', points: -2, description: 'Restricted to seasonal or time-of-day limits' });
     schedule -= 2;
-  } else if (safeSegment.scheduleWorkWindows === 'heavy') {
+  } else if (workWindows === 'heavy') {
     schedulePenalties.push({ key: 'workWindows', label: 'Work windows', points: -4, description: 'Heavy restrictions due to schools, hospitals, events, or noise curfews' });
     schedule -= 4;
   }
 
-  if (safeSegment.scheduleSubsurface === 'moderate_uncertainty') {
+  const subsurface = scheduleInputs.subsurfaceUncertainty;
+  if (subsurface === 'moderate_uncertainty') {
     schedulePenalties.push({ key: 'subsurface', label: 'Subsurface uncertainty', points: -1, description: 'Moderate uncertainty with some missing data' });
     schedule -= 1;
-  } else if (safeSegment.scheduleSubsurface === 'high_uncertainty') {
-    schedulePenalties.push({ key: 'subsurface', label: 'Subsurface uncertainty', points: -2, description: 'High uncertainty with missing or unreliable data' });
+  } else if (subsurface === 'high_uncertainty' || subsurface === 'unknown') {
+    schedulePenalties.push({ key: 'subsurface', label: 'Subsurface uncertainty', points: -2, description: 'High or unknown uncertainty with missing or unreliable data' });
     schedule -= 2;
   }
 
@@ -371,34 +424,38 @@ export const calculateFeasibilityScores = (segment) => {
   let urban = 20;
   const urbanPenalties = [];
 
-  if (safeSegment.urbanContext === 'moderate') {
+  const contextIntensity = urbanInputs.contextIntensity;
+  if (contextIntensity === 'moderate') {
     urbanPenalties.push({ key: 'urbanContext', label: 'Urban context intensity', points: -4, description: 'Moderate urban context intensity' });
     urban -= 4;
-  } else if (safeSegment.urbanContext === 'low') {
+  } else if (contextIntensity === 'low') {
     urbanPenalties.push({ key: 'urbanContext', label: 'Urban context intensity', points: -8, description: 'Low urban context intensity' });
     urban -= 8;
   }
 
-  if (safeSegment.urbanConnectivity === 'partial') {
+  const connectivity = urbanInputs.connectivityRestoration;
+  if (connectivity === 'partial') {
     urbanPenalties.push({ key: 'urbanConnectivity', label: 'Connectivity restoration', points: -3, description: 'Partial connectivity restoration' });
     urban -= 3;
-  } else if (safeSegment.urbanConnectivity === 'minimal') {
+  } else if (connectivity === 'minimal') {
     urbanPenalties.push({ key: 'urbanConnectivity', label: 'Connectivity restoration', points: -6, description: 'Minimal connectivity restoration' });
     urban -= 6;
   }
 
-  if (safeSegment.urbanPublicSpace === 'moderate') {
+  const publicRealm = urbanInputs.publicRealmOpportunity;
+  if (publicRealm === 'moderate') {
     urbanPenalties.push({ key: 'urbanPublicSpace', label: 'Public realm opportunity', points: -2, description: 'Moderate public realm opportunity' });
     urban -= 2;
-  } else if (safeSegment.urbanPublicSpace === 'limited') {
+  } else if (publicRealm === 'limited') {
     urbanPenalties.push({ key: 'urbanPublicSpace', label: 'Public realm opportunity', points: -4, description: 'Limited public realm opportunity' });
     urban -= 4;
   }
 
-  if (safeSegment.urbanDestinations === 'one') {
+  const destinations = urbanInputs.destinationAdjacency;
+  if (destinations === 'one') {
     urbanPenalties.push({ key: 'urbanDestinations', label: 'Destination adjacency', points: -1, description: 'One destination adjacency' });
     urban -= 1;
-  } else if (safeSegment.urbanDestinations === 'none') {
+  } else if (destinations === 'none') {
     urbanPenalties.push({ key: 'urbanDestinations', label: 'Destination adjacency', points: -2, description: 'No destination adjacency' });
     urban -= 2;
   }
@@ -406,9 +463,9 @@ export const calculateFeasibilityScores = (segment) => {
   urban = Math.max(0, Math.min(20, urban));
 
   const politicalResult = computePoliticalProcess({
-    ownership: safeSegment.ownership,
-    priorStudies: safeSegment.priorStudies,
-    jurisdictionCount: safeSegment.jurisdictionCount,
+    ownership: politicalInputs.ownershipControl,
+    priorStudies: politicalInputs.priorStudies,
+    jurisdictionCount: politicalInputs.jurisdictionCount,
   });
 
   const total = structural + cost + schedule + urban + politicalResult.score;
@@ -424,7 +481,7 @@ export const calculateFeasibilityScores = (segment) => {
             : key === 'length'
             ? 'Length increases deck quantities'
             : key === 'ramps'
-            ? `Ramps (${safeSegment.ramp_count}) increase staging costs`
+            ? `Ramps (${rampCount}) increase staging costs`
             : key === 'interchange'
             ? 'Major interchange increases complexity'
             : `${key} penalty`;

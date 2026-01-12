@@ -1,0 +1,22 @@
+// Scoring input keys and categories for initialization
+export const scoringInputs = [
+  { category: 'STRUCTURAL', input_key: 'VERTICAL_PROFILE' },
+  { category: 'STRUCTURAL', input_key: 'TRENCH_COMPATIBILITY' },
+  { category: 'STRUCTURAL', input_key: 'GEOTECH_RISK' },
+  { category: 'STRUCTURAL', input_key: 'STRUCTURE_INTERFACES' },
+  { category: 'COST', input_key: 'CLEAR_WIDTH' },
+  { category: 'COST', input_key: 'DECK_LENGTH' },
+  { category: 'COST', input_key: 'RAMPS_WITHIN_SEGMENT' },
+  { category: 'COST', input_key: 'MAJOR_INTERCHANGE_PRESENT' },
+  { category: 'SCHEDULE', input_key: 'TRAFFIC_OPS_CONSTRAINT' },
+  { category: 'SCHEDULE', input_key: 'CONSTRUCTION_STAGING' },
+  { category: 'SCHEDULE', input_key: 'WORK_WINDOWS' },
+  { category: 'SCHEDULE', input_key: 'SUBSURFACE_UNCERTAINTY' },
+  { category: 'URBAN', input_key: 'CONTEXT_INTENSITY' },
+  { category: 'URBAN', input_key: 'CONNECTIVITY_RESTORATION' },
+  { category: 'URBAN', input_key: 'PUBLIC_REALM_OPPORTUNITY' },
+  { category: 'URBAN', input_key: 'DESTINATION_ADJACENCY' },
+  { category: 'POLITICAL', input_key: 'OWNERSHIP' },
+  { category: 'POLITICAL', input_key: 'PRIOR_STUDIES' },
+  { category: 'POLITICAL', input_key: 'JURISDICTION_COUNT' },
+];
